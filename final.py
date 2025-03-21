@@ -1,7 +1,7 @@
 # Sky Reznik, John Lackey, Kevin Abatto
 # Packages
-#import pandas as pd 
-#import numpy as np 
+import pandas as pd 
+import numpy as np 
 # Import data 
 import os
 from kaggle.api.kaggle_api_extended import KaggleApi
@@ -29,4 +29,7 @@ if not os.path.exists(dataset_file_path):
 else:
     print("Dataset already exists, skipping download.")
 
-
+# Load CSV into a pandas dataframe
+shared_file_path = './kaggle_datasets/used-car-auction-prices/car_prices.csv'
+df = pd.read_csv(shared_file_path)
+print(df.head())
