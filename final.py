@@ -15,7 +15,7 @@ if not os.path.exists(download_path):
     os.makedirs(download_path)
 
 # Check if the dataset already exists in the folder
-dataset_file_path = os.path.join(download_path, 'dataset.csv')  # Modify this based on the dataset file
+dataset_file_path = os.path.join(download_path, 'car_prices.csv')  # Modify this based on the dataset file
 if not os.path.exists(dataset_file_path):
     # Initialize the Kaggle API
     api = KaggleApi()
