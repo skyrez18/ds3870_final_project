@@ -30,6 +30,6 @@ else:
     print("Dataset already exists, skipping download.")
 
 # Load CSV into a pandas dataframe
-shared_file_path = './kaggle_datasets/used-car-auction-prices/car_prices.csv'
-df = pd.read_csv(shared_file_path)
+shared_file_path = './kaggle_datasets/car_prices.csv'
+df = pd.read_csv(shared_file_path, quotechar='"', on_bad_lines='skip')
 print(df.head())
