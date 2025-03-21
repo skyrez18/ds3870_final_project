@@ -31,5 +31,8 @@ else:
 
 # Load CSV into a pandas dataframe
 shared_file_path = './kaggle_datasets/car_prices.csv'
+# line 408,163 - "Model" field contains a comma (SE PZEV w/Connectivity, Navigation) - specify quotechar='"'
+# This tells Pandas to treat anything inside double quotes as a single field, even if it contains commas.
+#      solution provided by ChatGPT
 df = pd.read_csv(shared_file_path, quotechar='"', on_bad_lines='skip')
 print(df.head())
