@@ -13,7 +13,7 @@ download_path = './kaggle_datasets'     # Folder to store the dataset
 # Create download path if it doesn't exist
 if not os.path.exists(download_path):
     os.makedirs(download_path)
-    
+
 # Check if file exists
 dataset_file_path = os.path.join(download_path, 'car_prices.csv')   
 # Check if the dataset already exists in the folder
@@ -37,3 +37,9 @@ shared_file_path = './kaggle_datasets/car_prices.csv'
 #      solution provided by ChatGPT
 df = pd.read_csv(shared_file_path, quotechar='"', on_bad_lines='skip')
 print(df.head())
+
+# Data Cleaning
+print("Start: ", df.shape)
+# Remove any row with missing data
+df = df.dropna()
+print("Finish: ", df.shape)
