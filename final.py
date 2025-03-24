@@ -36,10 +36,39 @@ shared_file_path = './kaggle_datasets/car_prices.csv'
 # This tells Pandas to treat anything inside double quotes as a single field, even if it contains commas.
 #      solution provided by ChatGPT
 df = pd.read_csv(shared_file_path, quotechar='"', on_bad_lines='skip')
-print(df.head())
+#print(df.head())
+
+
 
 # Data Cleaning
 print("Start: ", df.shape)
 # Remove any row with missing data
 df = df.dropna()
 print("Finish: ", df.shape)
+
+
+'''
+# Plot 'mmr' v. 'sellingprice'
+import matplotlib.pyplot as plt
+import seaborn as sns
+# Set the style of seaborn
+sns.set(style="whitegrid")
+plt.scatter(df['mmr'], df['sellingprice']) # Create a scatter plot
+sns.regplot(x='mmr', y='sellingprice', data=df, scatter=False, color='red') # Linear fit line
+plt.title('MMR vs Selling Price')
+plt.xlabel('MMR')
+plt.ylabel('Selling Price')
+plt.show()
+'''
+
+
+
+# Scatter plot is showing so outlires, lets take a closer looke at the data to find and remove them
+
+outliers_rows = df.index[
+    ((df['mmr'] > 100000) | (df['sellingprice'] > 100000)) &
+    ((df['mmr'] > df['sellingprice'] * 2) | (df['mmr'] < df['sellingprice'] * 0.5))
+].tolist()
+
+print("Outliers: ", outliers_rows)
+print(df.loc[outliers_rows])
