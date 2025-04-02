@@ -56,7 +56,8 @@ def process_row(row, session):
 def main():
     # Load dataset
     try:
-        df = pd.read_csv('vehicle_data.csv')
+        shared_file_path = './kaggle_datasets/car_prices.csv'
+        df = pd.read_csv(shared_file_path, quotechar='"', on_bad_lines='skip')
     except Exception as e:
         logger.error(f"Failed to load CSV file: {str(e)}")
         return
