@@ -3,92 +3,144 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import time
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import random
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import numpy as np
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('msrp_scraper.log'),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
 def format_for_url(text):
-    """Convert text to Edmunds URL format (lowercase, hyphens, no special chars)."""
-    text = text.lower().replace(" ", "-")  # Replace spaces with hyphens
-    text = re.sub(r'[^a-z0-9-]', '', text)  # Remove special characters
+    """Convert text to URL-friendly format"""
+    text = text.lower().replace(" ", "-")
+    text = re.sub(r'[^a-z0-9-]', '', text)
     return text
 
-def get_msrp(make, model, year, session, retries=3):
-    """Fetch MSRP from Edmunds based on make, model, and year, with retries."""
-    make = format_for_url(make)
-    model = format_for_url(model)
-    base_url = f"https://www.edmunds.com/{make}/{model}/{year}/features-specs/"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-    }
+def create_session():
+    """Create a requests session with retry strategy"""
+    session = requests.Session()
+    retry_adapter = requests.adapters.HTTPAdapter(
+        max_retries=3,
+        pool_connections=10,
+        pool_maxsize=10
+    )
+    session.mount('https://', retry_adapter)
+    return session
+
+def extract_msrp(soup):
+    """Try multiple methods to extract MSRP from page"""
+    selectors = [
+        ('dt', 'MSRP'),  # Primary selector
+        ('span', {'class': 'price-value'}),
+        ('div', {'class': 'price-wrapper'}),
+        ('span', {'itemprop': 'price'})
+    ]
     
-    for attempt in range(retries):
+    for tag, identifier in selectors:
         try:
-            response = session.get(base_url, headers=headers, timeout=10)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, 'html.parser')
-                msrp_label = soup.find('dt', string='MSRP')
-                
-                if not msrp_label:
-                    logger.warning(f"MSRP label not found for {year} {make} {model}")
-                    return None
-                    
-                msrp_value = msrp_label.find_next_sibling('dd')
-                if not msrp_value:
-                    logger.warning(f"MSRP value not found for {year} {make} {model}")
-                    return None
-                    
-                return msrp_value.text.strip()
+            if isinstance(identifier, str):
+                element = soup.find(tag, string=identifier)
+                if element and (sibling := element.find_next_sibling('dd')):
+                    return sibling.text.strip()
             else:
-                logger.warning(f"Attempt {attempt+1}: Failed to fetch {year} {make} {model}, Status Code: {response.status_code}")
-        except Exception as e:
-            logger.error(f"Attempt {attempt+1}: Error fetching {year} {make} {model}: {str(e)}")
-        time.sleep(2 ** attempt)  # Exponential backoff
-        
+                if element := soup.find(tag, identifier):
+                    return element.text.strip()
+        except Exception:
+            continue
     return None
 
+def get_msrp(make, model, year, session):
+    """Fetch MSRP with comprehensive error handling"""
+    make_fmt = format_for_url(make)
+    model_fmt = format_for_url(model)
+    url = f"https://www.edmunds.com/{make_fmt}/{model_fmt}/{year}/features-specs/"
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.edmunds.com/"
+    }
+
+    try:
+        # Random delay to avoid rate limiting
+        time.sleep(random.uniform(1, 3))
+        
+        response = session.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        if msrp := extract_msrp(soup):
+            logger.info(f"Success: {year} {make} {model} - MSRP: {msrp}")
+            return msrp
+        else:
+            logger.warning(f"MSRP not found: {year} {make} {model}")
+            return pd.NA
+            
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request failed: {year} {make} {model} - {str(e)}")
+        return pd.NA
+    except Exception as e:
+        logger.error(f"Unexpected error: {year} {make} {model} - {str(e)}")
+        return pd.NA
+
 def process_row(row, session):
+    """Wrapper function for parallel processing"""
     return get_msrp(row['make'], row['model'], row['year'], session)
 
-def main():
-    # Load dataset
+def main(input_file, output_file, max_workers=5):
+    """Main execution flow"""
     try:
-        shared_file_path = './kaggle_datasets/car_prices.csv'
-        df = pd.read_csv(shared_file_path, quotechar='"', on_bad_lines='skip')
-    except Exception as e:
-        logger.error(f"Failed to load CSV file: {str(e)}")
-        return
-
-    # Initialize session and results
-    results = []
-    num_workers = 10  # Adjust based on your system and network conditions
-    
-    with requests.Session() as session, ThreadPoolExecutor(max_workers=num_workers) as executor:
-        # Submit all tasks
-        future_to_index = {
-            executor.submit(process_row, row, session): idx 
-            for idx, row in df.iterrows()
-        }
+        # Read input
+        df = pd.read_csv(input_file)
+        if 'msrp' not in df.columns:
+            df['msrp'] = pd.NA
         
-        # Process completed tasks
-        for future in as_completed(future_to_index):
-            idx = future_to_index[future]
-            try:
-                df.at[idx, 'msrp'] = future.result()
-                # Small delay to be polite to the server
-                time.sleep(0.5)
-            except Exception as e:
-                logger.error(f"Error processing row {idx}: {str(e)}")
-
-    # Save updated dataset
-    try:
-        df.to_csv('vehicle_data_with_msrp.csv', index=False)
-        logger.info("MSRP scraping complete and dataset updated.")
+        # Initialize session
+        session = create_session()
+        
+        # Process in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(process_row, row, session): idx
+                for idx, row in df.iterrows()
+                if pd.isna(row['msrp'])  # Only process rows without MSRP
+            }
+            
+            for future in as_completed(futures):
+                idx = futures[future]
+                try:
+                    df.at[idx, 'msrp'] = future.result()
+                except Exception as e:
+                    logger.error(f"Result handling failed for row {idx}: {str(e)}")
+                    df.at[idx, 'msrp'] = pd.NA
+        
+        # Save results
+        df.to_csv(output_file, index=False)
+        logger.info(f"Successfully saved results to {output_file}")
+        print(f"\nProcessing complete. Results saved to {output_file}")
+        print(f"Success rate: {df['msrp'].notna().mean():.1%}")
+        
     except Exception as e:
-        logger.error(f"Failed to save results: {str(e)}")
+        logger.error(f"Fatal error in main execution: {str(e)}")
+        raise
 
 if __name__ == "__main__":
-    main()
+    # Configuration
+    INPUT_CSV = 'vehicle_data.csv'
+    OUTPUT_CSV = 'vehicle_data_with_msrp.csv'
+    WORKERS = 5  # Conservative default
+    
+    print(f"Starting MSRP scraping for {INPUT_CSV}")
+    print(f"Using {WORKERS} parallel workers")
+    print("Logging detailed progress to msrp_scraper.log\n")
+    
+    main(input_file=INPUT_CSV, output_file=OUTPUT_CSV, max_workers=WORKERS)
